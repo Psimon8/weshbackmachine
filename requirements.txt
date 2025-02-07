@@ -1,8 +1,7 @@
 streamlit
-selenium
+undetected-chromedriver
 pillow
 plotly
 pandas
 openai
 python-dotenv
-webdriver-manager
