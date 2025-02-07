@@ -5,4 +5,4 @@ plotly
 pandas
 openai
 python-dotenv
-webdriver_manager
+webdriver-manager
