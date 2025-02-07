@@ -14,6 +14,9 @@ import openai
 from datetime import datetime
 import json
 
+
+# Installer les navigateurs si nécessaire
+
 class SERPAnalyzer:
     def __init__(self, api_key):
         self.api_key = api_key
