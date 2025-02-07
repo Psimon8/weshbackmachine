@@ -1,5 +1,5 @@
 streamlit
-undetected-chromedriver
+playwright
 pillow
 plotly
 pandas
