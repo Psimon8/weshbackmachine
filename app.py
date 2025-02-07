@@ -2,10 +2,7 @@ import streamlit as st
 import os
 import time
 import random
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 import urllib.parse
 import plotly.graph_objects as go
 import plotly.express as px
@@ -17,67 +14,119 @@ import openai
 from datetime import datetime
 import json
 
-class GoogleSearchTool:
-    def __init__(self):
-        self.setup_chrome_options()
+class SERPAnalyzer:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        openai.api_key = api_key
 
-    def setup_chrome_options(self):
-        self.options = uc.ChromeOptions()
-        self.options.add_argument('--headless')
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--window-size=1920,1080')
-
-    def take_screenshot(self, keyword):
-        driver = None
+    def analyze_screenshot(self, image_path):
         try:
-            driver = uc.Chrome(options=self.options)
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-            search_params = {
-                'q': keyword,
-                'hl': 'fr',
-                'gl': 'FR',
-                'num': 10
-            }
-            search_url = f"https://www.google.com/search?{urllib.parse.urlencode(search_params)}"
+            response = openai.ChatCompletion.create(
+                model="gpt-4-vision-preview",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """Vous êtes un expert en analyse de SERP Google. Analysez cette capture d'écran
+                        et identifiez tous les éléments (Paid Ads, Organic, PLA, etc.), leur position et calculez
+                        la part de visibilité. Retournez les résultats au format JSON avec la structure suivante:
+                        {
+                            "actors": [
+                                {
+                                    "name": "nom_acteur",
+                                    "visibility_percentage": nombre,
+                                    "elements": [
+                                        {
+                                            "type": "type_element",
+                                            "position": nombre
+                                        }
+                                    ]
+                                }
+                            ],
+                            "element_types": [
+                                {
+                                    "type": "type_element",
+                                    "count": nombre,
+                                    "visibility_percentage": nombre
+                                }
+                            ]
+                        }"""
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "data": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=4000
+            )
 
-            driver.get(search_url)
-            time.sleep(3)
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            st.error(f"Erreur lors de l'analyse: {str(e)}")
+            return None
 
-            try:
-                cookie_button = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.ID, "L2AGLb")))
-                cookie_button.click()
-                time.sleep(1)
-            except:
-                pass
+class GoogleSearchTool:
+    def take_screenshot(self, keyword):
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
 
-            # Scroll pour charger tout le contenu
-            last_height = driver.execute_script("return document.body.scrollHeight")
-            while True:
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    break
-                last_height = new_height
+                page = context.new_page()
 
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+                search_params = {
+                    'q': keyword,
+                    'hl': 'fr',
+                    'gl': 'FR',
+                    'num': 10
+                }
+                search_url = f"https://www.google.com/search?{urllib.parse.urlencode(search_params)}"
 
-            screenshot = driver.get_screenshot_as_png()
-            return screenshot
+                page.goto(search_url, wait_until="networkidle")
+
+                # Gérer le bouton des cookies
+                try:
+                    page.click("#L2AGLb", timeout=5000)
+                except:
+                    pass
+
+                # Faire défiler la page
+                page.evaluate("""
+                    window.scrollTo(0, document.body.scrollHeight);
+                    new Promise((resolve) => setTimeout(resolve, 2000));
+                    window.scrollTo(0, 0);
+                """)
+
+                # Attendre que la page soit complètement chargée
+                page.wait_for_timeout(2000)
+
+                # Prendre la capture d'écran
+                screenshot = page.screenshot(full_page=True)
+
+                context.close()
+                browser.close()
+
+                return screenshot
 
         except Exception as e:
             st.error(f"Erreur lors de la capture d'écran: {str(e)}")
             return None
-        finally:
-            if driver:
-                driver.quit()
 
 def create_visualization(analysis_results):
     if not analysis_results:
-        return None
+        return None, None
 
     # Créer un DataFrame pour les acteurs
     actors_df = pd.DataFrame([
