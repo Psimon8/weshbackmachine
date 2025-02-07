@@ -2,10 +2,7 @@ import streamlit as st
 import os
 import time
 import random
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -20,94 +17,21 @@ import openai
 from datetime import datetime
 import json
 
-class SERPAnalyzer:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        openai.api_key = api_key
-
-    def analyze_screenshot(self, image_path):
-        try:
-            with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-
-            response = openai.ChatCompletion.create(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """Vous êtes un expert en analyse de SERP Google. Analysez cette capture d'écran
-                        et identifiez tous les éléments (Paid Ads, Organic, PLA, etc.), leur position et calculez
-                        la part de visibilité. Retournez les résultats au format JSON avec la structure suivante:
-                        {
-                            "actors": [
-                                {
-                                    "name": "nom_acteur",
-                                    "visibility_percentage": nombre,
-                                    "elements": [
-                                        {
-                                            "type": "type_element",
-                                            "position": nombre
-                                        }
-                                    ]
-                                }
-                            ],
-                            "element_types": [
-                                {
-                                    "type": "type_element",
-                                    "count": nombre,
-                                    "visibility_percentage": nombre
-                                }
-                            ]
-                        }"""
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "data": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=4000
-            )
-
-            # Convertir la réponse en JSON
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            st.error(f"Erreur lors de l'analyse: {str(e)}")
-            return None
-
 class GoogleSearchTool:
     def __init__(self):
         self.setup_chrome_options()
 
     def setup_chrome_options(self):
-        self.options = Options()
-        self.options.add_argument('--window-size=1920,1080')
-        self.options.add_argument('--headless=new')
-        self.options.add_argument('--disable-gpu')
+        self.options = uc.ChromeOptions()
+        self.options.add_argument('--headless')
         self.options.add_argument('--no-sandbox')
         self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--disable-blink-features=AutomationControlled')
-        self.options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        self.options.add_experimental_option('useAutomationExtension', False)
-
-    def get_random_user_agent(self):
-        chrome_versions = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        ]
-        return random.choice(chrome_versions)
+        self.options.add_argument('--window-size=1920,1080')
 
     def take_screenshot(self, keyword):
         driver = None
         try:
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=self.options)
+            driver = uc.Chrome(options=self.options)
 
             search_params = {
                 'q': keyword,
@@ -118,7 +42,7 @@ class GoogleSearchTool:
             search_url = f"https://www.google.com/search?{urllib.parse.urlencode(search_params)}"
 
             driver.get(search_url)
-            time.sleep(3)  # Augmenté pour assurer le chargement complet
+            time.sleep(3)
 
             try:
                 cookie_button = WebDriverWait(driver, 5).until(
@@ -128,7 +52,7 @@ class GoogleSearchTool:
             except:
                 pass
 
-            # Faire défiler la page pour charger tout le contenu
+            # Scroll pour charger tout le contenu
             last_height = driver.execute_script("return document.body.scrollHeight")
             while True:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -138,7 +62,6 @@ class GoogleSearchTool:
                     break
                 last_height = new_height
 
-            # Revenir en haut de la page
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(1)
 
