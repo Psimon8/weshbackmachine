@@ -1,0 +1,8 @@
+streamlit
+selenium
+pillow
+plotly
+pandas
+openai
+python-dotenv
+webdriver_manager
